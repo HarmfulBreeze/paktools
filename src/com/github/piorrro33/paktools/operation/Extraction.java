@@ -2,10 +2,7 @@ package com.github.piorrro33.paktools.operation;
 
 import java.io.*;
 import java.nio.ByteBuffer;
-import java.nio.charset.CharacterCodingException;
 import java.nio.charset.Charset;
-import java.nio.charset.CharsetDecoder;
-import java.nio.charset.CodingErrorAction;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.Scanner;
@@ -15,9 +12,6 @@ import static java.nio.ByteOrder.LITTLE_ENDIAN;
 
 class Extraction {
     private static final Charset CS_SHIFT_JIS = Charset.forName("Shift_JIS");
-    private static final CharsetDecoder SJIS_DECODER = CS_SHIFT_JIS.newDecoder()
-            .onMalformedInput(CodingErrorAction.REPORT)
-            .onUnmappableCharacter(CodingErrorAction.REPORT);
 
     public static boolean perform(Path pakPath, Path destFolderPath) {
         // Check if pak exists, create destination folder if needed
@@ -33,21 +27,22 @@ class Extraction {
                 System.err.println("Could not create directory at given folder path! " + e.getLocalizedMessage());
                 return false;
             }
-        }
-        try (Stream<Path> walk = Files.walk(destFolderPath, 1)) {
-            if (walk.count() > 1) {
-                System.out.println("Warning! The destination folder is not empty. Some files may be overwritten.\n" +
-                        "Do you want to proceed (yes or no)?");
-                Scanner sc = new Scanner(System.in);
-                final String userAnswer = sc.nextLine();
-                if (!userAnswer.equalsIgnoreCase("yes") && !userAnswer.equalsIgnoreCase("y")) {
-                    // User did not answer yes
-                    System.out.println("Aborting.");
-                    return false;
+        } else {
+            try (Stream<Path> walk = Files.walk(destFolderPath, 1)) {
+                if (walk.count() > 1) {
+                    System.out.println("Warning! The destination folder is not empty. Some files may be overwritten.\n" +
+                            "Do you want to proceed (yes or no)?");
+                    Scanner sc = new Scanner(System.in);
+                    final String userAnswer = sc.nextLine();
+                    if (!userAnswer.equalsIgnoreCase("yes") && !userAnswer.equalsIgnoreCase("y")) {
+                        // User did not answer yes
+                        System.out.println("Aborting.");
+                        return false;
+                    }
                 }
+            } catch (IOException e) {
+                System.err.println("An I/O error has occurred while walking the folder path! " + e.getLocalizedMessage());
             }
-        } catch (IOException e) {
-            System.err.println("An I/O error has occurred while walking the folder path! " + e.getLocalizedMessage());
         }
 
         // Open stream to pak file
@@ -75,7 +70,7 @@ class Extraction {
             do {
                 // Read every field of the header
                 pakStreamOffset += pakStream.read(bb_name.array());
-                name = SJIS_DECODER.decode(bb_name).toString();
+                name = CS_SHIFT_JIS.decode(bb_name).toString();
                 pakStreamOffset += pakStream.read(bb_headerSize.array());
                 headerSize = bb_headerSize.getInt();
                 pakStreamOffset += pakStream.read(bb_fileSize.array());
@@ -87,6 +82,7 @@ class Extraction {
                 if (fileSize != -1) { // Avoids writing the final dummy
                     // Remove undefined data from the buffer
                     name = name.substring(0, name.indexOf('\0'));
+                    System.out.println("Extracting file \"" + name + "\"...");
 
                     // Read file data
                     ByteBuffer bb_fileData = ByteBuffer.allocate(fileSize);
@@ -112,9 +108,6 @@ class Extraction {
                 bb_nextHeaderOffset.rewind();
                 bb_unk.rewind();
             } while (fileSize != -1);
-        } catch (CharacterCodingException e) {
-            System.err.println("Could not decode a character in filename at offset " + pakStreamOffset);
-            return false;
         } catch (IOException e) {
             e.printStackTrace();
             return false;

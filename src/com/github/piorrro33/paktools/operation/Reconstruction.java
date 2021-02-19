@@ -42,9 +42,6 @@ class Reconstruction {
             }
         }
 
-        // Make a list holding paths to all the files in the source folder.
-        System.out.println("Browsing source folder...");
-
         // Open stream to pak file
         OutputStream pakStream;
         try {
@@ -56,8 +53,6 @@ class Reconstruction {
 
         // Get all files at the root of the source folder
         try (Stream<Path> walk = Files.walk(sourceFolderPath, 1)) {
-            System.out.println("Writing package...");
-
             // Create ByteBuffers
             ByteBuffer bb_name = ByteBuffer.allocate(64).order(LITTLE_ENDIAN);
             ByteBuffer bb_headerSize = ByteBuffer.allocate(4).order(LITTLE_ENDIAN);
@@ -69,9 +64,10 @@ class Reconstruction {
             walk.filter(Files::isRegularFile).forEach(inFilePath -> {
                 try {
                     // Populate header ByteBuffers
+                    String name = inFilePath.getFileName().toString();
                     int fileSize = (int) Files.size(inFilePath);
                     int alignmentSize = (0x10 - fileSize % 0x10) % 0x10;
-                    bb_name.put(CS_SHIFT_JIS.encode(inFilePath.getFileName().toString() + "\0"));
+                    bb_name.put(CS_SHIFT_JIS.encode(name + "\0"));
                     bb_headerSize.putInt(0x50);
                     bb_fileSize.putInt(fileSize);
                     bb_nextHeaderOffset.putInt(0x50 + fileSize + alignmentSize);
@@ -81,15 +77,17 @@ class Reconstruction {
                     ByteBuffer bb_fileData = ByteBuffer.allocate(fileSize).order(LITTLE_ENDIAN);
                     byte[] alignment = new byte[alignmentSize];
                     try (InputStream inFileIs = new BufferedInputStream(Files.newInputStream(inFilePath))) {
+                        //noinspection ResultOfMethodCallIgnored
                         inFileIs.read(bb_fileData.array());
                     } catch (IOException e) {
                         String s = "An error has occurred while reading from file " +
-                                "\"" + inFilePath + "\": " +
+                                "\"" + name + "\": " +
                                 e.getLocalizedMessage();
                         System.err.println(s);
                     }
 
                     // Write everything to package
+                    System.out.println("Adding file \"" + name + "\"...");
                     pakStream.write(bb_name.array());
                     pakStream.write(bb_headerSize.array());
                     pakStream.write(bb_fileSize.array());
@@ -110,6 +108,7 @@ class Reconstruction {
             });
 
             // Write final dummy: set name to \0, set fileSize and nextHeaderOffset to -1, reuse the rest
+            System.out.println("Adding final dummy file...");
             bb_name.put((byte) 0x00);
             bb_fileSize.putInt(-1);
             bb_nextHeaderOffset.putInt(-1);
