@@ -9,7 +9,7 @@ import java.nio.file.Paths;
 import java.util.Locale;
 
 public class Main {
-    public static final String APPLICATION_VERSION = "0.1";
+    public static final String APPLICATION_VERSION = "v0.1";
 
     public static void usage() {
         // extract/rebuild datfile hd6file sourceDir/destDir
@@ -21,6 +21,7 @@ public class Main {
     }
 
     public static void main(String[] args) {
+        System.out.println("paktools " + APPLICATION_VERSION);
         if (args.length < 2) {
             usage();
             System.exit(1);
