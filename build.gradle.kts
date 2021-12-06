@@ -21,6 +21,10 @@ repositories {
     mavenCentral()
 }
 
+dependencies {
+    implementation("info.picocli:picocli:4.6.2")
+}
+
 graalvmNative {
     binaries {
         named("main") {
