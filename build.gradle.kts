@@ -13,8 +13,13 @@ application {
 }
 
 tasks.withType<JavaCompile> {
+    options.compilerArgs.add("-Aproject=${project.group}/${project.name}")
     options.encoding = "UTF-8"
     options.release.set(17)
+}
+
+tasks.withType<JavaExec> {
+    standardInput = System.`in` // Allows user input while running from Gradle
 }
 
 repositories {
@@ -23,11 +28,13 @@ repositories {
 
 dependencies {
     implementation("info.picocli:picocli:4.6.2")
+    annotationProcessor("info.picocli:picocli-codegen:4.6.2")
 }
 
 graalvmNative {
     binaries {
         named("main") {
+            buildArgs.add("-H:+AddAllCharsets")
             imageName.set(project.name + SharedConstants.EXECUTABLE_EXTENSION)
             javaLauncher.set(javaToolchains.launcherFor {
                 languageVersion.set(JavaLanguageVersion.of(17))
