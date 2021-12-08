@@ -1,6 +1,5 @@
 package com.github.piorrro33.paktools;
 
-import com.github.piorrro33.paktools.operation.OperationMode;
 import com.github.piorrro33.paktools.operation.Operations;
 import picocli.CommandLine;
 
@@ -8,6 +7,8 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.concurrent.Callable;
 
+import static com.github.piorrro33.paktools.operation.Operations.OperationMode.EXTRACT;
+import static com.github.piorrro33.paktools.operation.Operations.OperationMode.REBUILD;
 import static picocli.CommandLine.*;
 
 @Command(name = Main.APPLICATION_NAME, version = Main.APPLICATION_VERSION_STRING, mixinStandardHelpOptions = true)
@@ -28,9 +29,11 @@ public class Main implements Callable<Integer> {
     private static Path outputPath;
 
     public static void main(String[] args) {
-        int exitCode = new CommandLine(new Main())
-                .setExecutionExceptionHandler(new ExecutionExceptionHandler())
-                .execute(args);
+        CommandLine commandLine = new CommandLine(new Main());
+        int exitCode = commandLine.execute(args);
+        if (exitCode == ExitCode.USAGE) {
+            commandLine.usage(commandLine.getErr());
+        }
         System.exit(exitCode);
     }
 
@@ -39,7 +42,8 @@ public class Main implements Callable<Integer> {
         System.out.println(APPLICATION_VERSION_STRING);
 
         if (inputPath.length > 1 && outputPath != null) {
-            throw new IllegalArgumentException("More than one input path was given with the output path");
+            System.err.println("More than one input path was given with the output path");
+            return ExitCode.USAGE;
         }
 
         boolean isSuccessful = true;
@@ -47,11 +51,12 @@ public class Main implements Callable<Integer> {
             if (Files.isRegularFile(input)) {
                 Path folderPath;
                 if (outputPath == null) {
+                    // User did not give an output folder path, let's make our own
                     String inputFilenameStr = input.getFileName().toString();
 
                     String folderName;
                     if (!inputFilenameStr.contains(".")) {
-                        folderName = inputFilenameStr + "_dir"; // TODO: handle this better
+                        folderName = inputFilenameStr + "_dir";
                     } else {
                         folderName = inputFilenameStr.substring(0, inputFilenameStr.lastIndexOf('.'));
                     }
@@ -61,19 +66,23 @@ public class Main implements Callable<Integer> {
                 }
 
                 if (Files.isRegularFile(folderPath)) {
-                    throw new IllegalArgumentException(
-                            "Output path (%s) cannot be a file if input path (%s) is a file"
-                                    .formatted(outputPath, input)
+                    System.err.printf(
+                            "Output path (%s) cannot be a file if input path (%s) is a file%n" +
+                            "Specify a different output path!%n", outputPath, input
                     );
+                    isSuccessful = false;
+                    continue;
                 }
 
-                boolean ret = Operations.perform(OperationMode.EXTRACT, input, folderPath);
-                if (isSuccessful && !ret) {
+                boolean ret = Operations.perform(EXTRACT, input, folderPath);
+                if (!ret) {
+                    // Avoid setting it to true if an operation on a previous input failed
                     isSuccessful = false;
                 }
             } else if (Files.isDirectory(input)) {
                 Path pakPath;
                 if (outputPath == null) {
+                    // User did not give an output file path, let's make our own
                     String filename = input + DEFAULT_PACKAGE_EXTENSION;
                     pakPath = input.resolveSibling(filename);
                 } else {
@@ -81,18 +90,20 @@ public class Main implements Callable<Integer> {
                 }
 
                 if (Files.isDirectory(pakPath)) {
-                    throw new IllegalArgumentException(
-                            "Output path (%s) cannot be a folder if input path (%s) is a folder"
-                                    .formatted(outputPath, input)
+                    System.err.printf(
+                            "Output path (%s) cannot be a folder if input path (%s) is a folder%n" +
+                            "Specify a different output path!%n", outputPath, input
                     );
+                    isSuccessful = false;
+                    continue;
                 }
 
-                boolean ret = Operations.perform(OperationMode.REBUILD, pakPath, input);
-                if (isSuccessful && !ret) {
+                boolean ret = Operations.perform(REBUILD, input, pakPath);
+                if (!ret) {
                     isSuccessful = false;
                 }
             } else {
-                // TODO: handle this better
+                System.err.println("Invalid input path \"%s\"");
                 isSuccessful = false;
             }
         }
@@ -104,17 +115,5 @@ public class Main implements Callable<Integer> {
         }
 
         return isSuccessful ? ExitCode.OK : ExitCode.SOFTWARE;
-    }
-}
-
-class ExecutionExceptionHandler implements CommandLine.IExecutionExceptionHandler {
-    @Override
-    public int handleExecutionException(Exception ex, CommandLine commandLine, ParseResult parseResult) {
-        if (ex instanceof IllegalArgumentException) {
-            commandLine.getErr().println(ex.getMessage());
-            commandLine.usage(commandLine.getErr());
-            return commandLine.getCommandSpec().exitCodeOnInvalidInput();
-        }
-        return commandLine.getCommandSpec().exitCodeOnExecutionException();
     }
 }

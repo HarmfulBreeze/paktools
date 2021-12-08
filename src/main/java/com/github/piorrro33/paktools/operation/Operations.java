@@ -3,17 +3,17 @@ package com.github.piorrro33.paktools.operation;
 import java.nio.file.Path;
 
 public class Operations {
-    public static boolean perform(OperationMode mode, Path pakPath, Path folderPath) {
+    public static boolean perform(OperationMode mode, Path input, Path output) {
         try {
             switch (mode) {
                 case EXTRACT -> {
-                    return Extraction.perform(pakPath, folderPath);
+                    return Extraction.perform(input, output);
                 }
                 case REBUILD -> {
-                    return Reconstruction.perform(pakPath, folderPath);
+                    return Reconstruction.perform(output, input);
                 }
                 default -> {
-                    System.err.println("Warning: no handler for OperationMode" + mode.toString());
+                    System.err.println("Warning: no handler for OperationMode" + mode);
                     return false;
                 }
             }
@@ -22,5 +22,9 @@ public class Operations {
             e.printStackTrace();
             return false;
         }
+    }
+
+    public enum OperationMode {
+        EXTRACT, REBUILD
     }
 }
