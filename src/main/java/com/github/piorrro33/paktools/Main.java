@@ -67,7 +67,10 @@ public class Main implements Callable<Integer> {
                     );
                 }
 
-                isSuccessful = Operations.perform(OperationMode.EXTRACT, input, folderPath);
+                boolean ret = Operations.perform(OperationMode.EXTRACT, input, folderPath);
+                if (isSuccessful && !ret) {
+                    isSuccessful = false;
+                }
             } else if (Files.isDirectory(input)) {
                 Path pakPath;
                 if (outputPath == null) {
@@ -84,7 +87,10 @@ public class Main implements Callable<Integer> {
                     );
                 }
 
-                isSuccessful = Operations.perform(OperationMode.REBUILD, pakPath, input);
+                boolean ret = Operations.perform(OperationMode.REBUILD, pakPath, input);
+                if (isSuccessful && !ret) {
+                    isSuccessful = false;
+                }
             } else {
                 // TODO: handle this better
                 isSuccessful = false;
