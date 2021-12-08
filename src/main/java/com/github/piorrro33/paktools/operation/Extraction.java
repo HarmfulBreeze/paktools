@@ -1,7 +1,8 @@
 package com.github.piorrro33.paktools.operation;
 
-import java.io.*;
+import java.io.IOException;
 import java.nio.ByteBuffer;
+import java.nio.channels.ByteChannel;
 import java.nio.charset.Charset;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -9,16 +10,18 @@ import java.util.Scanner;
 import java.util.stream.Stream;
 
 import static java.nio.ByteOrder.LITTLE_ENDIAN;
+import static java.nio.file.StandardOpenOption.*;
 
 class Extraction {
     private static final Charset CS_SHIFT_JIS = Charset.forName("Shift_JIS");
+    private static final int BUFFER_SIZE = 64;
+
+    private static void bufSkip(ByteBuffer buf, int offset) {
+        buf.position(buf.position() + offset);
+    }
 
     public static boolean perform(Path pakPath, Path destFolderPath) {
-        // Check if pak exists, create destination folder if needed
-        if (Files.notExists(pakPath)) {
-            System.err.println("Package file could not be found!");
-            return false;
-        }
+        // Create destination folder if needed
         if (Files.notExists(destFolderPath)) {
             System.out.println("Destination folder does not exist. Creating it...");
             try {
@@ -30,8 +33,9 @@ class Extraction {
         } else {
             try (Stream<Path> walk = Files.walk(destFolderPath, 1)) {
                 if (walk.count() > 1) {
-                    System.out.println("Warning! The destination folder is not empty. Some files may be overwritten.\n" +
-                            "Do you want to proceed (yes or no)?");
+                    System.out.printf("Warning! The destination folder (%s) is not empty. Some files may be " +
+                                      "overwritten.%n" +
+                                      "Do you want to proceed (yes or no)? ", destFolderPath);
                     Scanner sc = new Scanner(System.in);
                     final String userAnswer = sc.nextLine();
                     if (!userAnswer.equalsIgnoreCase("yes") && !userAnswer.equalsIgnoreCase("y")) {
@@ -42,82 +46,80 @@ class Extraction {
                 }
             } catch (IOException e) {
                 System.err.println("An I/O error has occurred while walking the folder path! " + e.getLocalizedMessage());
+                return false;
             }
         }
 
-        // Open stream to pak file
-        InputStream pakStream;
-        try {
-            pakStream = new BufferedInputStream(Files.newInputStream(pakPath));
-        } catch (IOException e) {
-            System.err.println("Could not open package file! " + e.getLocalizedMessage());
-            return false;
-        }
+        ByteBuffer inBuf = ByteBuffer.allocate(BUFFER_SIZE).order(LITTLE_ENDIAN);
 
-        int pakStreamOffset = 0;
-        try {
-            // Create ByteBuffers
-            ByteBuffer bb_name = ByteBuffer.allocate(64).order(LITTLE_ENDIAN);
-            ByteBuffer bb_headerSize = ByteBuffer.allocate(4).order(LITTLE_ENDIAN);
-            ByteBuffer bb_fileSize = ByteBuffer.allocate(4).order(LITTLE_ENDIAN);
-            ByteBuffer bb_nextHeaderOffset = ByteBuffer.allocate(4).order(LITTLE_ENDIAN);
-            ByteBuffer bb_unk = ByteBuffer.allocate(4).order(LITTLE_ENDIAN);
-
-            // Define header variables
-            String name;
-            int headerSize, fileSize, nextHeaderOffset;
-
+        String filename;
+        int headerSize, fileSize, nextHeaderOffset;
+        try (ByteChannel inChan = Files.newByteChannel(pakPath)) {
             do {
-                // Read every field of the header
-                pakStreamOffset += pakStream.read(bb_name.array());
-                name = CS_SHIFT_JIS.decode(bb_name).toString();
-                pakStreamOffset += pakStream.read(bb_headerSize.array());
-                headerSize = bb_headerSize.getInt();
-                pakStreamOffset += pakStream.read(bb_fileSize.array());
-                fileSize = bb_fileSize.getInt();
-                pakStreamOffset += pakStream.read(bb_nextHeaderOffset.array());
-                nextHeaderOffset = bb_nextHeaderOffset.getInt();
-                pakStreamOffset += pakStream.read(bb_unk.array());
+                inChan.read(inBuf);
+                inBuf.flip();
 
-                if (fileSize != -1) { // Avoids writing the final dummy
-                    // Remove undefined data from the buffer
-                    name = name.substring(0, name.indexOf('\0'));
-                    System.out.println("Extracting file \"" + name + "\"...");
-
-                    // Read file data
-                    ByteBuffer bb_fileData = ByteBuffer.allocate(fileSize);
-                    pakStreamOffset += pakStream.read(bb_fileData.array());
-
-                    // Write file data into the output
-                    Path outFilePath = destFolderPath.resolve(name);
-                    try (OutputStream outFileOs = new BufferedOutputStream(Files.newOutputStream(outFilePath))) {
-                        outFileOs.write(bb_fileData.array());
-                    } catch (IOException e) {
-                        System.err.println("An error has occurred while writing an output file: " + e.getLocalizedMessage());
-                        return false;
-                    }
-
-                    // Skip to the next header
-                    pakStreamOffset += pakStream.skip(nextHeaderOffset - fileSize - headerSize);
+                filename = CS_SHIFT_JIS.decode(inBuf).toString();
+                if (filename.charAt(0) == '\0') {
+                    // We have reached the final entry, we can exit the loop
+                    break;
                 }
 
-                // Rewind ByteBuffers
-                bb_name.rewind();
-                bb_headerSize.rewind();
-                bb_fileSize.rewind();
-                bb_nextHeaderOffset.rewind();
-                bb_unk.rewind();
-            } while (fileSize != -1);
+                filename = filename.substring(0, filename.indexOf('\0')); // Remove dummy data after null byte
+
+                inBuf.clear();
+                inChan.read(inBuf);
+                inBuf.flip();
+
+                headerSize = inBuf.getInt();
+                fileSize = inBuf.getInt();
+                nextHeaderOffset = inBuf.getInt();
+                bufSkip(inBuf, 4); // unknown
+
+                inBuf.compact();
+
+                System.out.printf("Extracting file \"%s\"...%n", filename);
+
+                Path outFilePath = destFolderPath.resolve(filename);
+                try (ByteChannel outChan = Files.newByteChannel(outFilePath, WRITE, CREATE, TRUNCATE_EXISTING)) {
+                    ByteBuffer outBuf = ByteBuffer.allocate(BUFFER_SIZE).order(LITTLE_ENDIAN);
+
+                    int outBytesWritten = 0;
+                    while (outBytesWritten < fileSize) {
+                        inChan.read(inBuf);
+                        inBuf.flip();
+
+                        if (fileSize - outBytesWritten < 64) {
+                            // We have to copy less than a full buffer to outBuf
+                            outBuf.put(0, inBuf, 0, fileSize - outBytesWritten);
+                            outBuf.position(fileSize - outBytesWritten);
+                            inBuf.position(fileSize - outBytesWritten);
+                        } else {
+                            outBuf.put(inBuf);
+                        }
+
+                        outBuf.flip();
+                        outBytesWritten += outChan.write(outBuf);
+
+                        inBuf.compact(); // We compact rather than clear to avoid discarding next file's data
+                        outBuf.clear();
+                    }
+                } catch (IOException e) {
+                    System.err.println("An error has occurred while writing to the output file: " + e.getLocalizedMessage());
+                    return false;
+                }
+
+                // Move to the next header
+                inChan.read(inBuf);
+                inBuf.flip();
+                bufSkip(inBuf, nextHeaderOffset - fileSize - headerSize);
+                inBuf.compact();
+            } while (true);
         } catch (IOException e) {
-            e.printStackTrace();
+            System.err.printf("An error has occurred while extracting \"%s\": %s%n", pakPath.getFileName(), e.getLocalizedMessage());
             return false;
-        } finally {
-            try {
-                pakStream.close();
-            } catch (IOException e) {
-                System.err.println("Could not close package file stream! " + e.getLocalizedMessage());
-            }
         }
+
         return true;
     }
 }
