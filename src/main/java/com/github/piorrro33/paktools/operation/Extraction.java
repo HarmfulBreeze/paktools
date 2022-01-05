@@ -53,7 +53,7 @@ class Extraction {
         ByteBuffer inBuf = ByteBuffer.allocate(BUFSIZE).order(LITTLE_ENDIAN);
 
         try (ByteChannel inChan = Files.newByteChannel(pakPath)) {
-            do {
+            while (true) {
                 inChan.read(inBuf);
                 inBuf.flip();
 
@@ -111,7 +111,7 @@ class Extraction {
                 inBuf.flip();
                 bufSkip(inBuf, nextHeaderOffset - fileSize - headerSize);
                 inBuf.compact();
-            } while (true);
+            }
         } catch (IOException e) {
             System.err.printf("An error has occurred while extracting \"%s\": %s%n", pakPath.getFileName(), e.getLocalizedMessage());
             return false;

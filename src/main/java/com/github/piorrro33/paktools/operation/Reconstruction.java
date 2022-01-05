@@ -45,16 +45,16 @@ class Reconstruction {
                 // Write all file entries except final dummy
                 walk.filter(Files::isRegularFile).forEach(inFilePath -> {
                     try (ByteChannel inChan = Files.newByteChannel(inFilePath)) {
-                        String name = inFilePath.getFileName().toString();
+                        String filename = inFilePath.getFileName().toString();
                         int fileSize = (int) Files.size(inFilePath);
                         int alignmentSize = (0x10 - fileSize & 0xF) & 0xF;
                         byte[] alignment = new byte[alignmentSize];
 
-                        System.out.println("Adding file \"" + name + "\"...");
+                        System.out.println("Adding file \"" + filename + "\"...");
 
                         // Populate pakBuf with the header
-                        pakBuf.put(CS_SHIFT_JIS.encode(name + "\0")); // name
-                        pakBuf.position(0x40);
+                        pakBuf.put(CS_SHIFT_JIS.encode(filename + "\0")); // filename
+                        pakBuf.position(FILENAME_BUFSIZE);
                         pakBuf.putInt(HEADER_SIZE); // headerSize
                         pakBuf.putInt(fileSize); // fileSize
                         pakBuf.putInt(HEADER_SIZE + fileSize + alignmentSize); // nextHeaderOffset
@@ -84,7 +84,7 @@ class Reconstruction {
 
                 // Write final dummy: set name to \0, set fileSize and nextHeaderOffset to -1, reuse the rest
                 System.out.println("Adding final dummy file...");
-                pakBuf.put((byte) 0x00); // name
+                pakBuf.put((byte) 0x00); // filename
                 pakBuf.position(FILENAME_BUFSIZE);
                 pakBuf.putInt(HEADER_SIZE); // headerSize
                 pakBuf.putInt(-1); // fileSize
