@@ -1,5 +1,3 @@
-import org.graalvm.buildtools.utils.SharedConstants
-
 plugins {
     id("application")
     id("org.graalvm.buildtools.native") version "0.9.6"
@@ -36,7 +34,7 @@ graalvmNative {
     binaries {
         named("main") {
             buildArgs.add("-H:+AddAllCharsets")
-            imageName.set(project.name + SharedConstants.EXECUTABLE_EXTENSION)
+            imageName.set(project.name)
             javaLauncher.set(javaToolchains.launcherFor {
                 languageVersion.set(JavaLanguageVersion.of(17))
                 vendor.set(JvmVendorSpec.GRAAL_VM)
