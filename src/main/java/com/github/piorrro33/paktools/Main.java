@@ -7,18 +7,13 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.concurrent.Callable;
 
+import static com.github.piorrro33.paktools.Constants.*;
 import static com.github.piorrro33.paktools.operation.Operations.OperationMode.EXTRACT;
 import static com.github.piorrro33.paktools.operation.Operations.OperationMode.REBUILD;
 import static picocli.CommandLine.*;
 
-@Command(name = Main.APPLICATION_NAME, version = Main.APPLICATION_VERSION_STRING, mixinStandardHelpOptions = true)
+@Command(name = APPLICATION_NAME, version = APPLICATION_VERSION_STRING, mixinStandardHelpOptions = true)
 public class Main implements Callable<Integer> {
-    public static final String APPLICATION_NAME = "paktools";
-    public static final String APPLICATION_VERSION = "v0.1";
-    public static final String APPLICATION_VERSION_STRING = APPLICATION_NAME + " " + APPLICATION_VERSION;
-
-    public static final String DEFAULT_PACKAGE_EXTENSION = ".pak";
-
     @Parameters(paramLabel = "INPUT",
             description = "Paths to package files or to folders.", arity = "1..*")
     private static Path[] inputPath;

@@ -9,14 +9,12 @@ import java.nio.file.Path;
 import java.util.Scanner;
 import java.util.stream.Stream;
 
+import static com.github.piorrro33.paktools.Constants.*;
 import static java.nio.ByteOrder.LITTLE_ENDIAN;
 import static java.nio.file.StandardOpenOption.*;
 
 class Reconstruction {
     private static final Charset CS_SHIFT_JIS = Charset.forName("Shift_JIS");
-    private static final int HEADER_SIZE = 0x50;
-    private static final int BUFFER_SIZE = 8192;
-    private static final int UNK_HEADER_CONST = 0x43424140;
 
     public static boolean perform(Path pakPath, Path sourceFolderPath) {
         // Create parent dirs for PAK if needed
@@ -39,7 +37,7 @@ class Reconstruction {
             }
         }
 
-        ByteBuffer pakBuf = ByteBuffer.allocate(BUFFER_SIZE).order(LITTLE_ENDIAN);
+        ByteBuffer pakBuf = ByteBuffer.allocate(BUFSIZE).order(LITTLE_ENDIAN);
 
         try (ByteChannel pakChan = Files.newByteChannel(pakPath, WRITE, CREATE, TRUNCATE_EXISTING)) {
             // Get all files at the root of the source folder
@@ -87,7 +85,7 @@ class Reconstruction {
                 // Write final dummy: set name to \0, set fileSize and nextHeaderOffset to -1, reuse the rest
                 System.out.println("Adding final dummy file...");
                 pakBuf.put((byte) 0x00); // name
-                pakBuf.position(0x40);
+                pakBuf.position(FILENAME_BUFSIZE);
                 pakBuf.putInt(HEADER_SIZE); // headerSize
                 pakBuf.putInt(-1); // fileSize
                 pakBuf.putInt(-1); // nextHeaderOffset

@@ -9,13 +9,13 @@ import java.nio.file.Path;
 import java.util.Scanner;
 import java.util.stream.Stream;
 
+import static com.github.piorrro33.paktools.Constants.BUFSIZE;
+import static com.github.piorrro33.paktools.Constants.FILENAME_BUFSIZE;
 import static java.nio.ByteOrder.LITTLE_ENDIAN;
 import static java.nio.file.StandardOpenOption.*;
 
 class Extraction {
     private static final Charset CS_SHIFT_JIS = Charset.forName("Shift_JIS");
-    private static final int FILENAME_BUFSIZE = 0x40;
-    private static final int BUFSIZE = 8192;
 
     private static void bufSkip(ByteBuffer buf, int offset) {
         buf.position(buf.position() + offset);
