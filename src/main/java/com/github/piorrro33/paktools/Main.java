@@ -98,7 +98,7 @@ public class Main implements Callable<Integer> {
                     isSuccessful = false;
                 }
             } else {
-                System.err.println("Invalid input path \"%s\"");
+                System.err.printf("Invalid input path \"%s\"%n", input);
                 isSuccessful = false;
             }
         }
