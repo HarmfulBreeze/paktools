@@ -1,7 +1,8 @@
 package com.github.piorrro33.paktools.operation;
 
-import java.io.*;
+import java.io.IOException;
 import java.nio.ByteBuffer;
+import java.nio.channels.ByteChannel;
 import java.nio.charset.Charset;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -9,29 +10,16 @@ import java.util.Scanner;
 import java.util.stream.Stream;
 
 import static java.nio.ByteOrder.LITTLE_ENDIAN;
+import static java.nio.file.StandardOpenOption.*;
 
 class Reconstruction {
     private static final Charset CS_SHIFT_JIS = Charset.forName("Shift_JIS");
+    private static final int HEADER_SIZE = 0x50;
+    private static final int BUFFER_SIZE = 8192;
+    private static final int UNK_HEADER_CONST = 0x43424140;
 
     public static boolean perform(Path pakPath, Path sourceFolderPath) {
-        // Check if source folder exists and if PAK file does not exist
-        if (Files.notExists(sourceFolderPath)) {
-            System.err.println("Source folder could not be found!");
-            return false;
-        }
-        if (Files.exists(pakPath)) {
-            System.out.println("Warning! The destination package file already exists.\n" +
-                    "Do you want to proceed (yes or no)?");
-            Scanner sc = new Scanner(System.in);
-            final String userAnswer = sc.nextLine();
-            if (!userAnswer.equalsIgnoreCase("yes") && !userAnswer.equalsIgnoreCase("y")) {
-                // User did not answer yes
-                System.out.println("Aborting.");
-                return false;
-            }
-        }
-
-        // Create parent dirs for PAK
+        // Create parent dirs for PAK if needed
         if (pakPath.getParent() != null && Files.notExists(pakPath.getParent())) {
             System.out.println("Creating parent folders for package file...");
             try {
@@ -40,93 +28,83 @@ class Reconstruction {
                 System.err.println("Could not create parent folders for package file! " + e.getLocalizedMessage());
                 return false;
             }
-        }
-
-        // Open stream to pak file
-        OutputStream pakStream;
-        try {
-            pakStream = new BufferedOutputStream(Files.newOutputStream(pakPath));
-        } catch (IOException e) {
-            System.err.println("Could not open package file! " + e.getLocalizedMessage());
-            return false;
-        }
-
-        // Get all files at the root of the source folder
-        try (Stream<Path> walk = Files.walk(sourceFolderPath, 1)) {
-            // Create ByteBuffers
-            ByteBuffer bb_name = ByteBuffer.allocate(64).order(LITTLE_ENDIAN);
-            ByteBuffer bb_headerSize = ByteBuffer.allocate(4).order(LITTLE_ENDIAN);
-            ByteBuffer bb_fileSize = ByteBuffer.allocate(4).order(LITTLE_ENDIAN);
-            ByteBuffer bb_nextHeaderOffset = ByteBuffer.allocate(4).order(LITTLE_ENDIAN);
-            ByteBuffer bb_unk = ByteBuffer.allocate(4).order(LITTLE_ENDIAN);
-
-            // Write all file entries except final dummy
-            walk.filter(Files::isRegularFile).forEach(inFilePath -> {
-                try {
-                    // Populate header ByteBuffers
-                    String name = inFilePath.getFileName().toString();
-                    int fileSize = (int) Files.size(inFilePath);
-                    int alignmentSize = (0x10 - fileSize % 0x10) % 0x10;
-                    bb_name.put(CS_SHIFT_JIS.encode(name + "\0"));
-                    bb_headerSize.putInt(0x50);
-                    bb_fileSize.putInt(fileSize);
-                    bb_nextHeaderOffset.putInt(0x50 + fileSize + alignmentSize);
-                    bb_unk.putInt(0x43424140);
-
-                    // Read input file data
-                    ByteBuffer bb_fileData = ByteBuffer.allocate(fileSize).order(LITTLE_ENDIAN);
-                    byte[] alignment = new byte[alignmentSize];
-                    try (InputStream inFileIs = new BufferedInputStream(Files.newInputStream(inFilePath))) {
-                        //noinspection ResultOfMethodCallIgnored
-                        inFileIs.read(bb_fileData.array());
-                    } catch (IOException e) {
-                        String s = "An error has occurred while reading from file " +
-                                "\"" + name + "\": " +
-                                e.getLocalizedMessage();
-                        System.err.println(s);
-                    }
-
-                    // Write everything to package
-                    System.out.println("Adding file \"" + name + "\"...");
-                    pakStream.write(bb_name.array());
-                    pakStream.write(bb_headerSize.array());
-                    pakStream.write(bb_fileSize.array());
-                    pakStream.write(bb_nextHeaderOffset.array());
-                    pakStream.write(bb_unk.array());
-                    pakStream.write(bb_fileData.array());
-                    pakStream.write(alignment);
-
-                    // Rewind ByteBuffers
-                    bb_name.rewind();
-                    bb_headerSize.rewind();
-                    bb_fileSize.rewind();
-                    bb_nextHeaderOffset.rewind();
-                    bb_unk.rewind();
-                } catch (IOException e) {
-                    e.printStackTrace();
-                }
-            });
-
-            // Write final dummy: set name to \0, set fileSize and nextHeaderOffset to -1, reuse the rest
-            System.out.println("Adding final dummy file...");
-            bb_name.put((byte) 0x00);
-            bb_fileSize.putInt(-1);
-            bb_nextHeaderOffset.putInt(-1);
-            pakStream.write(bb_name.array());
-            pakStream.write(bb_headerSize.array());
-            pakStream.write(bb_fileSize.array());
-            pakStream.write(bb_nextHeaderOffset.array());
-            pakStream.write(bb_unk.array());
-        } catch (IOException e) {
-            e.printStackTrace();
-            return false;
-        } finally {
-            try {
-                pakStream.close();
-            } catch (IOException e) {
-                System.err.println("Could not close package file stream! " + e.getLocalizedMessage());
+        } else if (Files.exists(pakPath)) {
+            System.out.printf("Warning! The destination package file (%s) already exists.%n" +
+                              "Do you want to overwrite it (yes or no)? ", pakPath.getFileName());
+            final String userAnswer = new Scanner(System.in).nextLine();
+            if (!userAnswer.equalsIgnoreCase("yes") && !userAnswer.equalsIgnoreCase("y")) {
+                // User did not answer yes
+                System.out.println("Aborting.");
+                return false;
             }
         }
+
+        ByteBuffer pakBuf = ByteBuffer.allocate(BUFFER_SIZE).order(LITTLE_ENDIAN);
+
+        try (ByteChannel pakChan = Files.newByteChannel(pakPath, WRITE, CREATE, TRUNCATE_EXISTING)) {
+            // Get all files at the root of the source folder
+            try (Stream<Path> walk = Files.walk(sourceFolderPath, 1)) {
+                // Write all file entries except final dummy
+                walk.filter(Files::isRegularFile).forEach(inFilePath -> {
+                    try (ByteChannel inChan = Files.newByteChannel(inFilePath)) {
+                        String name = inFilePath.getFileName().toString();
+                        int fileSize = (int) Files.size(inFilePath);
+                        int alignmentSize = (0x10 - fileSize & 0xF) & 0xF;
+                        byte[] alignment = new byte[alignmentSize];
+
+                        System.out.println("Adding file \"" + name + "\"...");
+
+                        // Populate pakBuf with the header
+                        pakBuf.put(CS_SHIFT_JIS.encode(name + "\0")); // name
+                        pakBuf.position(0x40);
+                        pakBuf.putInt(HEADER_SIZE); // headerSize
+                        pakBuf.putInt(fileSize); // fileSize
+                        pakBuf.putInt(HEADER_SIZE + fileSize + alignmentSize); // nextHeaderOffset
+                        pakBuf.putInt(UNK_HEADER_CONST); // unk
+                        pakBuf.flip();
+
+                        // Write header into pakChan
+                        pakChan.write(pakBuf);
+                        pakBuf.clear();
+
+                        // Copy file data into pakChan
+                        while (inChan.read(pakBuf) > 0) {
+                            pakBuf.flip();
+                            pakChan.write(pakBuf);
+                            pakBuf.clear();
+                        }
+
+                        // Write alignment into pakChan
+                        pakBuf.put(alignment);
+                        pakBuf.flip();
+                        pakChan.write(pakBuf);
+                        pakBuf.clear();
+                    } catch (IOException e) {
+                        e.printStackTrace();
+                    }
+                });
+
+                // Write final dummy: set name to \0, set fileSize and nextHeaderOffset to -1, reuse the rest
+                System.out.println("Adding final dummy file...");
+                pakBuf.put((byte) 0x00); // name
+                pakBuf.position(0x40);
+                pakBuf.putInt(HEADER_SIZE); // headerSize
+                pakBuf.putInt(-1); // fileSize
+                pakBuf.putInt(-1); // nextHeaderOffset
+                pakBuf.putInt(UNK_HEADER_CONST); // unk
+                pakBuf.flip();
+                pakChan.write(pakBuf);
+                pakBuf.clear();
+            } catch (IOException e) {
+                e.printStackTrace();
+                return false;
+            }
+        } catch (IOException e) {
+            System.err.printf("An error has occurred while rebuilding \"%s\": %s%n", pakPath.getFileName(),
+                    e.getLocalizedMessage());
+            return false;
+        }
+
         return true;
     }
 }
