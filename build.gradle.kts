@@ -20,6 +20,7 @@ tasks.withType<JavaCompile> {
 
 tasks.withType<JavaExec> {
     standardInput = System.`in` // Allows user input while running from Gradle
+    outputs.upToDateWhen { false }
 }
 
 repositories {
