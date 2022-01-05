@@ -14,7 +14,8 @@ import static java.nio.file.StandardOpenOption.*;
 
 class Extraction {
     private static final Charset CS_SHIFT_JIS = Charset.forName("Shift_JIS");
-    private static final int BUFFER_SIZE = 64;
+    private static final int FILENAME_BUFSIZE = 0x40;
+    private static final int BUFSIZE = 8192;
 
     private static void bufSkip(ByteBuffer buf, int offset) {
         buf.position(buf.position() + offset);
@@ -36,8 +37,7 @@ class Extraction {
                     System.out.printf("Warning! The destination folder (%s) is not empty. Some files may be " +
                                       "overwritten.%n" +
                                       "Do you want to proceed (yes or no)? ", destFolderPath);
-                    Scanner sc = new Scanner(System.in);
-                    final String userAnswer = sc.nextLine();
+                    final String userAnswer = new Scanner(System.in).nextLine();
                     if (!userAnswer.equalsIgnoreCase("yes") && !userAnswer.equalsIgnoreCase("y")) {
                         // User did not answer yes
                         System.out.println("Aborting.");
@@ -50,30 +50,24 @@ class Extraction {
             }
         }
 
-        ByteBuffer inBuf = ByteBuffer.allocate(BUFFER_SIZE).order(LITTLE_ENDIAN);
+        ByteBuffer inBuf = ByteBuffer.allocate(BUFSIZE).order(LITTLE_ENDIAN);
 
-        String filename;
-        int headerSize, fileSize, nextHeaderOffset;
         try (ByteChannel inChan = Files.newByteChannel(pakPath)) {
             do {
                 inChan.read(inBuf);
                 inBuf.flip();
 
-                filename = CS_SHIFT_JIS.decode(inBuf).toString();
-                if (filename.charAt(0) == '\0') {
-                    // We have reached the final entry, we can exit the loop
-                    break;
+                String filename = CS_SHIFT_JIS.decode(inBuf.slice(0, FILENAME_BUFSIZE)).toString();
+                filename = filename.substring(0, filename.indexOf('\0')); // Remove null byte and dummy data
+                if (filename.isEmpty()) {
+                    break; // We have reached the final entry, we can exit the loop
                 }
 
-                filename = filename.substring(0, filename.indexOf('\0')); // Remove dummy data after null byte
+                inBuf.position(FILENAME_BUFSIZE);
 
-                inBuf.clear();
-                inChan.read(inBuf);
-                inBuf.flip();
-
-                headerSize = inBuf.getInt();
-                fileSize = inBuf.getInt();
-                nextHeaderOffset = inBuf.getInt();
+                int headerSize = inBuf.getInt();
+                int fileSize = inBuf.getInt();
+                int nextHeaderOffset = inBuf.getInt();
                 bufSkip(inBuf, 4); // unknown
 
                 inBuf.compact();
@@ -82,34 +76,37 @@ class Extraction {
 
                 Path outFilePath = destFolderPath.resolve(filename);
                 try (ByteChannel outChan = Files.newByteChannel(outFilePath, WRITE, CREATE, TRUNCATE_EXISTING)) {
-                    ByteBuffer outBuf = ByteBuffer.allocate(BUFFER_SIZE).order(LITTLE_ENDIAN);
-
+                    /*
+                     * We have probably already have file data in the buffer, so we have to initialize it to the
+                     * buffer's position.
+                     */
+                    int inBytesRead = inBuf.position();
                     int outBytesWritten = 0;
                     while (outBytesWritten < fileSize) {
-                        inChan.read(inBuf);
+                        inBytesRead += inChan.read(inBuf);
                         inBuf.flip();
 
-                        if (fileSize - outBytesWritten < 64) {
-                            // We have to copy less than a full buffer to outBuf
-                            outBuf.put(0, inBuf, 0, fileSize - outBytesWritten);
-                            outBuf.position(fileSize - outBytesWritten);
-                            inBuf.position(fileSize - outBytesWritten);
+                        if (inBytesRead > fileSize) {
+                            // Last write to outChan
+                            inBuf.limit(fileSize - outBytesWritten); // Limit buffer to write just enough
+                            outBytesWritten += outChan.write(inBuf);
+                            inBuf.limit(inBuf.capacity()); // Revert the limit to the capacity to be able to compact
                         } else {
-                            outBuf.put(inBuf);
+                            // Any other write
+                            outBytesWritten += outChan.write(inBuf);
                         }
 
-                        outBuf.flip();
-                        outBytesWritten += outChan.write(outBuf);
-
                         inBuf.compact(); // We compact rather than clear to avoid discarding next file's data
-                        outBuf.clear();
                     }
                 } catch (IOException e) {
                     System.err.println("An error has occurred while writing to the output file: " + e.getLocalizedMessage());
                     return false;
                 }
 
-                // Move to the next header
+                /*
+                 * Here we move to the next header. It shouldn't be needed as usually the next header is right after
+                 * the current file's data. But who knows! So let's move to it anyway just to be sure.
+                 */
                 inChan.read(inBuf);
                 inBuf.flip();
                 bufSkip(inBuf, nextHeaderOffset - fileSize - headerSize);
