@@ -5,6 +5,7 @@ import java.nio.ByteBuffer;
 import java.nio.channels.ByteChannel;
 import java.nio.charset.Charset;
 import java.nio.file.Files;
+import java.nio.file.NoSuchFileException;
 import java.nio.file.Path;
 import java.util.Scanner;
 import java.util.stream.Stream;
@@ -22,8 +23,19 @@ class Extraction {
     }
 
     public static boolean perform(Path pakPath, Path destFolderPath) {
-        // Create destination folder if needed
-        if (Files.notExists(destFolderPath)) {
+        try (Stream<Path> walk = Files.walk(destFolderPath, 1)) {
+            if (walk.count() > 1) {
+                System.out.printf("Warning! The destination folder (%s) is not empty. Some files may be " +
+                                  "overwritten.%n" +
+                                  "Do you want to proceed (yes or no)? ", destFolderPath);
+                final String userAnswer = new Scanner(System.in).nextLine();
+                if (!userAnswer.equalsIgnoreCase("yes") && !userAnswer.equalsIgnoreCase("y")) {
+                    // User did not answer yes
+                    System.out.println("Aborting.");
+                    return false;
+                }
+            }
+        } catch (NoSuchFileException fnfe) {
             System.out.println("Destination folder does not exist. Creating it...");
             try {
                 Files.createDirectories(destFolderPath);
@@ -31,23 +43,9 @@ class Extraction {
                 System.err.println("Could not create directory at given folder path! " + e.getLocalizedMessage());
                 return false;
             }
-        } else {
-            try (Stream<Path> walk = Files.walk(destFolderPath, 1)) {
-                if (walk.count() > 1) {
-                    System.out.printf("Warning! The destination folder (%s) is not empty. Some files may be " +
-                                      "overwritten.%n" +
-                                      "Do you want to proceed (yes or no)? ", destFolderPath);
-                    final String userAnswer = new Scanner(System.in).nextLine();
-                    if (!userAnswer.equalsIgnoreCase("yes") && !userAnswer.equalsIgnoreCase("y")) {
-                        // User did not answer yes
-                        System.out.println("Aborting.");
-                        return false;
-                    }
-                }
-            } catch (IOException e) {
-                System.err.println("An I/O error has occurred while walking the folder path! " + e.getLocalizedMessage());
-                return false;
-            }
+        } catch (IOException e) {
+            System.err.println("An I/O error has occurred while walking the folder path! " + e.getLocalizedMessage());
+            return false;
         }
 
         ByteBuffer inBuf = ByteBuffer.allocate(BUFSIZE).order(LITTLE_ENDIAN);
