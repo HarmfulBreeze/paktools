@@ -1,5 +1,7 @@
 package com.github.piorrro33.paktools.operation;
 
+import com.github.piorrro33.paktools.Utils;
+
 import java.io.IOException;
 import java.nio.ByteBuffer;
 import java.nio.channels.ByteChannel;
@@ -7,11 +9,9 @@ import java.nio.charset.Charset;
 import java.nio.file.Files;
 import java.nio.file.NoSuchFileException;
 import java.nio.file.Path;
-import java.util.Scanner;
 import java.util.stream.Stream;
 
-import static com.github.piorrro33.paktools.Constants.BUFSIZE;
-import static com.github.piorrro33.paktools.Constants.FILENAME_BUFSIZE;
+import static com.github.piorrro33.paktools.Constants.*;
 import static java.nio.ByteOrder.LITTLE_ENDIAN;
 import static java.nio.file.StandardOpenOption.*;
 
@@ -25,11 +25,11 @@ class Extraction {
     public static boolean perform(Path pakPath, Path destFolderPath) {
         try (Stream<Path> walk = Files.walk(destFolderPath, 1)) {
             if (walk.count() > 1) {
-                System.out.printf("Warning! The destination folder (%s) is not empty. Some files may be " +
-                                  "overwritten.%n" +
-                                  "Do you want to proceed (yes or no)? ", destFolderPath);
-                final String userAnswer = new Scanner(System.in).nextLine();
-                if (!userAnswer.equalsIgnoreCase("yes") && !userAnswer.equalsIgnoreCase("y")) {
+                String message = String.format(
+                        "Warning! The destination folder (%s) is not empty. Some files may be overwritten.%n" +
+                        "Do you want to proceed (yes or no)? ", destFolderPath
+                );
+                if (!Utils.promptYesOrNo(message)) {
                     // User did not answer yes
                     System.out.println("Aborting.");
                     return false;
@@ -48,9 +48,10 @@ class Extraction {
             return false;
         }
 
-        ByteBuffer inBuf = ByteBuffer.allocate(BUFSIZE).order(LITTLE_ENDIAN);
-
         try (ByteChannel inChan = Files.newByteChannel(pakPath)) {
+            ByteBuffer inBuf = ByteBuffer.allocate(BUFSIZE).order(LITTLE_ENDIAN);
+            long pakFileSize = Files.size(pakPath);
+
             while (true) {
                 inChan.read(inBuf);
                 inBuf.flip();
@@ -64,9 +65,39 @@ class Extraction {
                 inBuf.position(FILENAME_BUFSIZE);
 
                 int headerSize = inBuf.getInt();
+                if (headerSize != HEADER_SIZE) {
+                    String message = String.format(
+                            "Odd header size (0x%x), would you like to continue extracting %s (yes or no)? ",
+                            headerSize, pakPath.getFileName()
+                    );
+                    if (!Utils.promptYesOrNo(message)) {
+                        System.out.printf("Stopped extraction of %s.%n", pakPath.getFileName());
+                        return false;
+                    }
+                }
+
                 int fileSize = inBuf.getInt();
+                if (fileSize >= pakFileSize) {
+                    System.err.printf("Invalid file size (0x%x), stopping extraction.%n", fileSize);
+                    return false;
+                }
+
                 int nextHeaderOffset = inBuf.getInt();
-                bufSkip(inBuf, 4); // unknown
+                if (nextHeaderOffset < fileSize) {
+                    String message = String.format(
+                            "Odd next header offset (0x%s), would you like to continue extracting %s (yes or no)? ",
+                            nextHeaderOffset, pakPath.getFileName()
+                    );
+                    if (!Utils.promptYesOrNo(message)) {
+                        System.out.printf("Stopped extraction of %s.%n", pakPath.getFileName());
+                        return false;
+                    }
+                }
+
+                int unk = inBuf.getInt();
+                if (unk != UNK_HEADER_CONST) {
+                    System.out.printf("Warning: odd unknown int. Expected 0x43424140, got 0x%x%n", unk);
+                }
 
                 inBuf.compact();
 
