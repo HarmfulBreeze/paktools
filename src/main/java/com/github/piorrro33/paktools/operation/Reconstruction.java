@@ -1,12 +1,13 @@
 package com.github.piorrro33.paktools.operation;
 
+import com.github.piorrro33.paktools.Utils;
+
 import java.io.IOException;
 import java.nio.ByteBuffer;
 import java.nio.channels.ByteChannel;
 import java.nio.charset.Charset;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.util.Scanner;
 import java.util.stream.Stream;
 
 import static com.github.piorrro33.paktools.Constants.*;
@@ -27,10 +28,9 @@ public class Reconstruction {
                 return false;
             }
         } else if (Files.exists(pakPath)) {
-            System.out.printf("Warning! The destination package file (%s) already exists.%n" +
-                              "Do you want to overwrite it (yes or no)? ", pakPath.getFileName());
-            final String userAnswer = new Scanner(System.in).nextLine();
-            if (!userAnswer.equalsIgnoreCase("yes") && !userAnswer.equalsIgnoreCase("y")) {
+            String message = String.format("Warning! The destination package file (%s) already exists.%n" +
+                                           "Do you want to overwrite it (yes or no)? ", pakPath.getFileName());
+            if (!Utils.promptYesOrNo(message)) {
                 // User did not answer yes
                 System.out.println("Aborting.");
                 return false;
