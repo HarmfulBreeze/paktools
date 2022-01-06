@@ -3,7 +3,7 @@ package com.github.piorrro33.paktools;
 public class Constants {
 
     public static final String APPLICATION_NAME = "paktools";
-    public static final String APPLICATION_VERSION = "v1.0";
+    public static final String APPLICATION_VERSION = "v1.0.1";
     public static final String APPLICATION_VERSION_STRING = APPLICATION_NAME + " " + APPLICATION_VERSION;
     public static final String DEFAULT_PACKAGE_EXTENSION = ".pak";
     public static final int BUFSIZE = 8192;

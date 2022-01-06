@@ -4,7 +4,7 @@ plugins {
 }
 
 group = "com.github.piorrro33"
-version = "1.0"
+version = "1.0.1"
 
 application {
     mainClass.set("com.github.piorrro33.paktools.Main")
