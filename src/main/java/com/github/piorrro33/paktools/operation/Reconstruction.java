@@ -13,7 +13,7 @@ import static com.github.piorrro33.paktools.Constants.*;
 import static java.nio.ByteOrder.LITTLE_ENDIAN;
 import static java.nio.file.StandardOpenOption.*;
 
-class Reconstruction {
+public class Reconstruction {
     private static final Charset CS_SHIFT_JIS = Charset.forName("Shift_JIS");
 
     public static boolean perform(Path pakPath, Path sourceFolderPath) {

@@ -1,6 +1,7 @@
 package com.github.piorrro33.paktools;
 
-import com.github.piorrro33.paktools.operation.Operations;
+import com.github.piorrro33.paktools.operation.Extraction;
+import com.github.piorrro33.paktools.operation.Reconstruction;
 import picocli.CommandLine;
 
 import java.nio.file.Files;
@@ -8,8 +9,6 @@ import java.nio.file.Path;
 import java.util.concurrent.Callable;
 
 import static com.github.piorrro33.paktools.Constants.*;
-import static com.github.piorrro33.paktools.operation.Operations.OperationMode.EXTRACT;
-import static com.github.piorrro33.paktools.operation.Operations.OperationMode.REBUILD;
 import static picocli.CommandLine.*;
 
 @Command(name = APPLICATION_NAME, version = APPLICATION_VERSION_STRING, mixinStandardHelpOptions = true)
@@ -69,9 +68,15 @@ public class Main implements Callable<Integer> {
                     continue;
                 }
 
-                boolean ret = Operations.perform(EXTRACT, input, folderPath);
-                if (!ret) {
-                    // Avoid setting it to true if an operation on a previous input failed
+                try {
+                    boolean ret = Extraction.perform(input, folderPath);
+                    if (!ret) {
+                        // Avoid setting it to true if an operation on a previous input failed
+                        isSuccessful = false;
+                    }
+                } catch (Exception e) {
+                    System.err.println("An uncaught exception has been thrown while extracting!");
+                    e.printStackTrace();
                     isSuccessful = false;
                 }
             } else if (Files.isDirectory(input)) {
@@ -93,8 +98,14 @@ public class Main implements Callable<Integer> {
                     continue;
                 }
 
-                boolean ret = Operations.perform(REBUILD, input, pakPath);
-                if (!ret) {
+                try {
+                    boolean ret = Reconstruction.perform(pakPath, input);
+                    if (!ret) {
+                        isSuccessful = false;
+                    }
+                } catch (Exception e) {
+                    System.err.println("An uncaught exception has been thrown while rebuilding!");
+                    e.printStackTrace();
                     isSuccessful = false;
                 }
             } else {

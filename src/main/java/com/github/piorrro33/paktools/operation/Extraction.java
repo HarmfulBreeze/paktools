@@ -15,7 +15,7 @@ import static com.github.piorrro33.paktools.Constants.*;
 import static java.nio.ByteOrder.LITTLE_ENDIAN;
 import static java.nio.file.StandardOpenOption.*;
 
-class Extraction {
+public class Extraction {
     private static final Charset CS_SHIFT_JIS = Charset.forName("Shift_JIS");
 
     private static void bufSkip(ByteBuffer buf, int offset) {
